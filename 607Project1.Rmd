@@ -1,0 +1,177 @@
+---
+title: "DATA 607 Project 1"
+author: "Kristin Lussi"
+date: "2023-10-01"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Goal
+Your job is to create an R Markdown file that generates a .CSV file (that could for example be imported into a SQL database) with the following information for all of the players:
+Player’s Name, Player’s State, Total Number of Points, Player’s Pre-Rating, and Average Pre Chess Rating of Opponents
+
+## Loading and Reading the Data 
+
+First, we will load the packages needed and the url file from github.
+
+```{r loading, warning = FALSE, message = FALSE}
+# load packages
+library(stringr)
+library(dplyr)
+library(tidyr)
+
+# specify the url file
+urlfile = "https://raw.githubusercontent.com/kristinlussi/607Project1/main/tournamentinfo.txt"
+
+# read the .txt file
+chess_data <- read.delim(urlfile, header = FALSE)
+```
+
+
+## Manipulating the Data
+
+Next, we will manipulate the data into a data frame with multiple columns. 
+
+```{r wrangling, warning = FALSE, message = FALSE}
+# flatten the data into a vector and then convert into a matrix
+chess_data <- matrix(unlist(chess_data), byrow = TRUE)
+
+# remove the "---" rows and create two tables 
+# first table has Pair Number, Player Name, Total Points, and Round Scores
+chess_data1 <- chess_data[seq(5, length(chess_data), 3)]
+# second table has state, USCF #, rating (pre -> post), etc
+chess_data2 <- chess_data[seq(6, length(chess_data), 3)]
+
+# change the tables into data frames
+chess_data1 <- data.frame(chess_data1)
+
+chess_data2 <- data.frame(chess_data2)
+
+# separate the column into three columns: Pair Number (Primary key), Name, and Total Points
+chess_data_df <- separate(
+  chess_data1,
+  col = chess_data1,  
+  into = c("Player_Number", "Name", "Total_Points", "Round1", 
+           "Round2", "Round3", "Round4", "Round5", "Round6", "Round7"),
+  sep = "\\|",
+  remove = TRUE 
+)
+
+# Change the primary key from character to intenger
+chess_data_df$Player_Number <- as.integer(chess_data_df$Player_Number)
+
+# separate the column into three columns: State, USCF_ID 
+# (where the pre_rating is located), and Rating
+chess_data_df2 <- separate(
+  chess_data2,
+  col = chess_data2,  
+  into = c("State", "USCF_ID", "RATING"),
+  sep = "\\|",  
+  remove = TRUE
+) 
+
+# create a primary key for the second data frame to match up with the first data frame
+chess_data_df2 <- chess_data_df2 %>%
+  mutate(Player_Number = row_number()) %>%
+  select(Player_Number, everything())
+
+# merge the two data frames by the primary key (Player_Number)
+chess_data <- merge(chess_data_df, chess_data_df2, by = "Player_Number")
+
+# separate the USCF_ID column into pre_rating and post_rating columns
+chess_data <- chess_data %>%
+  separate(USCF_ID, into = c("RATING", "Post_Rating"), sep = " ->", extra = "merge") %>%
+  mutate(Post_Rating = gsub(".*R: (\\d+).*", "\\1", Post_Rating)) %>%
+  separate(RATING, into = c("RATING", "Pre_Rating"), sep = ": ", extra = "merge") 
+
+# change the Total_Points column to numeric
+chess_data$Total_Points <- as.numeric(chess_data$Total_Points)
+```
+
+
+## Calculate Opponent Average Pre-Rating
+
+Here, to assist with calculating the opponent average rating for each player, we will create a second data frame that contains the Player Number and their pre rating to reference back to. This will create a new column for each round, matching each opponent with their corresponding pre rating. These new columns are then used to calculate the mean opponent pre rating for each row (player).
+
+```{r calculate_avg, message = FALSE, warning = FALSE}
+# select only the columns needed for opponent average pre rating calculations
+chess_data <- chess_data %>% 
+  select(Player_Number, Name, State, Total_Points, Pre_Rating, 
+         Round1, Round2, Round3, Round4, Round5, Round6, Round7) 
+
+# extract only the player number from each round
+chess_data$Round1 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round1))
+chess_data$Round2 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round2))
+chess_data$Round3 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round3))
+chess_data$Round4 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round4))
+chess_data$Round5 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round5))
+chess_data$Round6 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round6))
+chess_data$Round7 <- as.numeric(gsub("[^0-9]+", "", chess_data$Round7))
+  
+# extract only the first four characters from the Pre_Rating 
+# column to get the Pre_Rating for each player
+chess_data$Pre_Rating <- substr(chess_data$Pre_Rating, 1, 4) %>%
+  as.numeric(chess_data$Pre_Rating) # change the Pre_Rating column to numeric
+
+# create a different data frame for player_numbers and pre_ratings
+player_id_rating <- data.frame(chess_data$Player_Number, chess_data$Pre_Rating) 
+
+# rename the colum names in the new data frame
+colnames(player_id_rating) <- c("Player_Number", "Opponent_Rating")
+
+# create a function that matches the pre rating to each opponent based on the player number
+merge_round_ratings <- function(chess_data, round_column) {
+  chess_data %>%
+    left_join(player_id_rating, by = setNames("Player_Number", round_column)) %>%
+    rename_with(~paste0(round_column, "_Rating"), "Opponent_Rating")
+}
+
+# specify each round
+rounds <- c("Round1", "Round2", "Round3", "Round4", "Round5", "Round6", "Round7")  
+
+# apply the function for each round
+for (round_column in rounds) {
+  chess_data <- merge_round_ratings(chess_data, round_column)
+}
+  
+# create a column for average opponent rating and
+# calculate the average opponent rating for each row
+chess_data <- chess_data %>%
+  rowwise() %>%
+  mutate(
+    Opponent_Avg_Rating = mean(c(Round1_Rating, Round2_Rating, 
+                                 Round3_Rating, Round4_Rating, Round5_Rating, 
+                                 Round6_Rating, Round7_Rating), na.rm = TRUE)
+  )
+```    
+
+## Prepare the Final Data Frame for Export
+
+Here, we will select only the Name, State, Total Points, Pre Rating, and Opponent Average Pre Rating columns for our final data frame to prepare for export.
+
+```{r final_data, message = FALSE, warning = FALSE }
+# select only the columns required for the .csv file
+chess_data <- chess_data %>%
+  select(Name, State, Total_Points, Pre_Rating, Opponent_Avg_Rating) %>% 
+  as.data.frame()
+
+# show a glimpse of the data frame
+head(chess_data)
+```
+
+## Exporting the Data into a .csv File
+
+Finally, we can write the .csv file with the following code: 
+
+```{r write_csv, warning = FALSE, message = FALSE}
+write.csv(chess_data, file = 
+            "/Users/kristinlussi/Documents/DATA607/Project1/chess_data_table.csv", 
+          row.names = FALSE, sep = ",")
+```
+
+The above .csv file will be saved in the specified file location with the name "chess_data_table.csv". 
