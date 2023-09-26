@@ -63,7 +63,7 @@ chess_data_df <- separate(
   remove = TRUE 
 )
 
-# Change the primary key from character to intenger
+# Change the primary key from character to integer
 chess_data_df$Player_Number <- as.integer(chess_data_df$Player_Number)
 
 # separate the column into columns: State, USCF_ID 
@@ -97,7 +97,7 @@ chess_data$Total_Points <- as.numeric(chess_data$Total_Points)
 
 ## Calculate Opponent Average Pre-Rating
 
-Here, to assist with calculating the opponent average rating for each player, we will create a second data frame that contains the Player Number and their pre rating to reference back to. This will create a new column for each round, matching each opponent with their corresponding pre rating. These new columns are then used to calculate the mean opponent pre rating for each row (player).
+Here, to assist with calculating the opponent average rating for each player, we will create a second data frame that contains the Player Number and their pre rating to reference back to. We will then make a function which will create a new column for each round, matching each opponent with their corresponding pre rating. These new columns are then used to calculate the mean opponent pre rating for each row (player).
 
 ```{r calculate_avg, message = FALSE, warning = FALSE}
 # select only the columns needed for opponent average pre rating calculations
