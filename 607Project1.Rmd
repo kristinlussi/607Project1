@@ -52,7 +52,8 @@ chess_data1 <- data.frame(chess_data1)
 
 chess_data2 <- data.frame(chess_data2)
 
-# separate the column into three columns: Pair Number (Primary key), Name, and Total Points
+# separate the column into columns: Pair Number (Primary key), Name, 
+# Total Points, and each round
 chess_data_df <- separate(
   chess_data1,
   col = chess_data1,  
@@ -65,7 +66,7 @@ chess_data_df <- separate(
 # Change the primary key from character to intenger
 chess_data_df$Player_Number <- as.integer(chess_data_df$Player_Number)
 
-# separate the column into three columns: State, USCF_ID 
+# separate the column into columns: State, USCF_ID 
 # (where the pre_rating is located), and Rating
 chess_data_df2 <- separate(
   chess_data2,
